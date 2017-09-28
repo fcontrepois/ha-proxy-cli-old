@@ -1,0 +1,86 @@
+#!/bin/bash
+
+source /home/admin/lib/common_bash
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+appdir=/home/admin/root/lb
+appbindir=/home/admin/binroot/lb
+
+updatedir=/home/admin/update
+
+txt=""
+
+getquery
+action=$( get_parameter $query action )
+[ -f $appdir/global/log_1 ] && remotelog=$(getValue $appdir/global/log_1 "ip\*")
+
+case "$action" in
+  "clearlog")
+    sudo /home/admin/bin/clearlog
+  ;;
+  "defaultlog")
+    showdefaultlog="1"
+  ;;
+  "tcplog")
+    showtcplog="1"
+  ;;
+  "httplog")
+    showhttplog="1"
+  ;;
+  "remotelog")
+    newremotelog=$( get_parameter $query remotelog )
+    sudo /usr/local/sbin/remountrw
+    if [ "$newremotelog" = "" ]; then
+      [ -f $appdir/global/log_1 ] && rm $appdir/global/log_1
+    else
+      cat > $appdir/global/log_1 << EOF
+ip*=$newremotelog 
+facil*=local6
+level*=debug
+EOF
+    fi
+  ;;
+  *)
+    echo ""
+  ;;
+esac
+
+cat $templatedir/header.template
+
+echo " <p> <a href=\"/lb-log\">Refresh</a> 
+<a href=\"/lb-log?action=clearlog\">Clear Log</a></p>
+<textarea cols=\"100\" rows=\"24\">"
+tail -100 /var/log/lb.log  | sed 's/^.*\([0-9][0-9]:[0-9][0-9]:[0-9][0-9]\).*]: /\1 /' | tac
+
+echo "</textarea>
+<form action=\"/lb-log\" method=\"get\" >
+<input type=\"hidden\" name=\"action\" value=\"remotelog\" />
+<p>Remote syslog IP (leave empty to disable): <input type=\"text\" name=\"remotelog\" value=\"$remotelog\" /><input type=\"submit\" /></p>
+</form>
+
+<p> <a href=\"/lb-log\">Refresh</a></p>
+<p> <a href=\"/lb-log?action=defaultlog\">Default log help </a></p>
+<p> <a href=\"/lb-log?action=tcplog\">TCP log help </a></p>
+<p> <a href=\"/lb-log?action=httplog\">HTTP log help </a></p>
+"
+
+if [ "$showdefaultlog" = "1" ]; then
+echo "<pre>"
+cat doc_defaultlog
+echo "</pre>"
+fi
+
+if [ "$showtcplog" = "1" ]; then
+echo "<pre>"
+cat doc_tcplog
+echo "</pre>"
+fi
+
+if [ "$showhttplog" = "1" ]; then
+echo "<pre>"
+cat doc_httplog
+echo "</pre>"
+fi
+
+cat $templatedir/footer.template

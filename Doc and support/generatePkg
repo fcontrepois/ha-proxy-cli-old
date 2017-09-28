@@ -1,0 +1,1 @@
+for type in $1 ; do (cd $type; find etc/ home/ var/ -type f -exec md5sum {} > DEBIAN/md5sums \;; dpkg -b . ..); done

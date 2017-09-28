@@ -1,0 +1,1 @@
+printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep DOWN | cut -d ',' -f "1 2 18" | sed 's/,/ /g'

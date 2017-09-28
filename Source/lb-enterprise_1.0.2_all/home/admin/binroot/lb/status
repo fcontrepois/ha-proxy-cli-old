@@ -1,0 +1,66 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+
+execfullpath="$0"
+filename=$(basename $execfullpath)
+BINCURRENTPATH=$(dirname $execfullpath)
+CURRENTPATH=$(echo $BINCURRENTPATH | sed 's/binroot/root/')
+conffile="$CURRENTPATH/$filename"
+
+up_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  N=$(ps aux | grep /home/admin/bin/lb | grep -v grep | wc -l)
+  echo $N
+  return 0
+}
+
+up_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+refresh(){
+  # set the value of the file to current running values
+  # from system -> file
+  echo "$filename refresh"
+  echo "up=" > $conffile
+  return 0
+}
+
+commit(){
+  # activate the configuration of this file
+  # file -> system
+  echo "$filename commit"
+  _up=$(getValue $filename up)
+  [ $_up -eq 0 ] && echo "turning off lb" && /home/admin/bin/lb.cmd stop
+  [ $_up -eq 1 ] && echo "turning on lb"  && /home/admin/bin/lb.cmd start
+  return 0
+}
+
+init(){
+  # create the config(s) file(s)
+  # starting
+  echo "$filename init"
+  echo "up=" > $conffile
+  return 0
+}
+
+touch(){
+  # in case of creation of a new file 
+  file=$1
+  [ -z $file ] && return 2
+  return 0
+}
+
+### main
+
+action=$1
+[ -z action ] && return 2
+shift
+option=$1
+shift
+value=$*
+execute $action $option $value

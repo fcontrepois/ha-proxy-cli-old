@@ -1,0 +1,68 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+appdir=/home/admin/root/ha
+appbindir=/home/admin/binroot/ha
+
+getquery
+format=$( get_parameter $query format )
+
+vip=$(getValue $appdir/vip vip)
+vnetmask=$(getValue $appdir/vip vnetmask)
+base=$(getValue $appdir/vip base)
+if=$(getValue $appdir/vip if)
+srcip=$(getValue $appdir/vip srcip)
+instance=$(getValue $appdir/vip instance)
+password=$(getValue $appdir/vip password)
+
+$appbindir/status refresh >/dev/null 2>&1
+$appbindir/vip refresh >/dev/null 2>&1
+up=$(getValue $appdir/status up)
+master=$(getValue $appdir/status master)
+
+if [ "$up" != "0" ]; then
+  upstring="<a href=\"ha_action?action=hadown\" > up </a>"
+else
+  upstring="<a href=\"ha_action?action=haup\" > down </a>"
+fi
+
+if [ "$format" = "xml" ]; then
+echo "
+<system>
+	<up>$up</up>
+	<master>$master</master>
+	<vip>$vip</vip>
+	<vnetmask>$vnetmask</vnetmask>
+	<base>$base</base>
+	<if>$if</if>
+	<srcip>$srcip</srcip>
+	<instance>$instance</instance>
+	<password>$password</password>
+</system>
+"
+else
+cat $templatedir/header.template
+echo  "
+<h2>UaR High Availability </h2>
+<p>$upstring</p>
+<p>master: $master</p>
+<table border=\"1\">
+<form action=\"ha_action\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"changeHa\" />
+<tr><td>vip (virtual ip)</td><td><input type=\"text\" name=\"vip\" value=\"$vip\" /></td></tr>
+<tr><td>vnetmask (virtual netmask)</td><td><input type=\"text\" name=\"vnetmask\" value=\"$vnetmask\" /></td></tr>
+<tr><td>base (lower number will be perfered master)</td><td><input type=\"text\" name=\"base\" value=\"$base\" /></td></tr>
+<tr><td>interface</td><td><input type=\"text\" name=\"if\" value=\"$if\" /></td></tr>
+<tr><td>source IP </td><td><input type=\"text\" name=\"srcip\" value=\"$srcip\" /></td></tr>
+<tr><td>instance (Master and Backup need to be the same)</td><td><input type=\"text\" name=\"instance\" value=\"$instance\" /></td></tr>
+<tr><td>password (so servers can trust who they are talking to)</td><td><input type=\"text\" name=\"password\" value=\"$password\" /></td></tr>
+<tr><td></td><td><input type=\"submit\" value=\"change\"/></td></tr>
+</form>
+</table>
+<br/> 
+"
+
+cat $templatedir/footer.template
+fi

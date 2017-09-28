@@ -1,0 +1,187 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+ssldir=/home/admin/root/ssl
+sslbindir=/home/admin/binroot/ssl
+
+getquery
+action=$( get_parameter $query action )
+name=$( get_parameter $query name )
+case $action in
+  "showcertificate")
+    SHOWCERT="1"
+  ;;
+  "newcert")
+     SHOWCERT="1"
+     certname=$( get_parameter $query certname )
+  ;;
+  "newcert2")
+     certname=$( get_parameter $query certname )
+     dh=$( get_parameter $query dh_$certname )
+     cert=$( get_parameter $query cert_$certname )
+     key=$( get_parameter $query key_$certname )
+
+     echo "$dh" > /home/admin/etc/ssl/$certname.pem
+     echo "$cert" >> /home/admin/etc/ssl/$certname.pem
+     echo "$key" >> /home/admin/etc/ssl/$certname.pem
+  ;;
+  "delcert")
+    certname=$( get_parameter $query certname )
+    rm /home/admin/etc/ssl/$certname.pem
+  ;;
+  "newssl")
+     lport=$( get_parameter $query lport )
+     dport=$( get_parameter $query dport )
+     cert=$( get_parameter $query cert )
+     echo "status=" > /home/admin/root/ssl/$name     
+     echo "dport=$dport" >> /home/admin/root/ssl/$name     
+     echo "lport=$lport" >> /home/admin/root/ssl/$name     
+     echo "cert=$cert" >> /home/admin/root/ssl/$name     
+     ln -s /home/admin/binroot/ssl/ssl /home/admin/binroot/ssl/$name
+     commit $ssldir/$name >/dev/null 2>&1
+  ;;
+  "delssl")
+     rm $ssldir/$name
+     rm $sslbindir/$name
+     rm /home/admin/etc/ssl/$name
+  ;;
+  "startssl")
+    sudo /usr/local/sbin/remountrw
+    setOption $ssldir/$name status 1
+    commit $ssldir/$name >/dev/null 2>&1
+    sudo /usr/local/sbin/remountro
+  ;;
+  "stopssl")
+    setOption $ssldir/$name status 0
+    commit $ssldir/$name >/dev/null 2>&1
+  ;;
+esac
+
+cat $templatedir/header.template 
+
+echo  " <h2>UaR SSL offload Version 1.0</h2>
+<table><tr><td>
+<a href=\"ssl-hp?action=showcertificate\">new certificate</a></td></tr>
+
+<form action=\"/ssl-hp\" method=\"get\">
+<tr>
+<input type=\"hidden\" name=\"action\" value=\"delcert\" /></td>
+<td>
+Delete cert:
+<select name=\"certname\" >
+"
+for pem in  /home/admin/etc/ssl/*.pem; 
+do 
+  [ ! -f $pem ] && continue
+  file=$(echo " ${pem%.*}" | xargs basename)
+  echo "<option value=\"$file\">$file</option>"
+done
+
+echo "</select></td><td><input type=\"submit\" /></td></tr></form>"
+
+
+if [ "$SHOWCERT" = "1" ]; then
+if [ "$certname" = "" ] ; then
+  echo " <h2>New Certificate</h2> 
+  <form action=\"ssl-hp\" method=\"get\">
+  <input type=\"hidden\" name=\"action\" value=\"newcert\" />
+  <h3>Certificate name</h3>
+  <input type=\"text\" name=\"certname\" /><br/>
+  <input type=\"submit\"/>
+  </form> "
+else
+  echo "
+  <form action=\"ssl-hp\" method=\"get\">
+  <input type=\"hidden\" name=\"action\" value=\"newcert2\" />
+  <input type=\"hidden\" name=\"certname\" value=\"$certname\" />
+  <h3>DH</h3>
+  <textarea cols=\"65\" rows=\"5\" name=\"dh_$certname\">"
+
+  echo " </textarea>
+  <h3>Certificate</h3>
+  <textarea cols=\"65\" rows=\"19\" name=\"cert_$certname\">"
+
+  echo "
+   </textarea>
+   <h3>Key</h3>
+  <textarea cols=\"65\" rows=\"15\" name=\"key_$certname\">
+
+  </textarea><br />
+  <input type=\"submit\"/>
+  </form>"
+fi
+fi
+
+echo "
+<table border=\"1\">
+<tr>
+<th>name</th>
+<th>receiving port</th>
+<th>send to [host:]port</th>
+<th>certificate</th>
+<th>status</th>
+<th>delete</th>
+</tr>"
+
+# cicling on current istances 
+for _name in $ssldir/*; do
+_name=$(basename $_name)
+
+sudo /usr/local/sbin/remountrw
+$sslbindir/$_name refresh >/dev/null 2>&1
+sudo /usr/local/sbin/remountro
+
+[ ! -f $ssldir/$_name ] && continue
+_status=$(getValue $ssldir/$_name status)
+_lport=$(getValue $ssldir/$_name lport)
+_dport=$(getValue $ssldir/$_name dport)
+_certname=$(getValue $ssldir/$_name cert)
+
+echo "
+<tr>
+<td>$_name</td>
+<td>$_lport</td>
+<td>$_dport</td>
+<td>$_certname</td>"
+
+if [ "$_status" = "1" ];then
+  echo " <td><a href=\"ssl-hp?action=stopssl&name=$_name\">UP</a></td>"
+else
+  echo " <td><a href=\"ssl-hp?action=startssl&name=$_name\">DOWN</a></td>"
+fi
+echo " <td><a href=\"ssl-hp?action=delssl&name=$_name\">DELETE</a></td>"
+
+
+echo "</tr>"
+
+done
+
+echo "
+<!-- new instance -->
+<form action=\"/ssl-hp\" method=\"get\">
+<tr>
+<input type=\"hidden\" name=\"action\" value=\"newssl\" /></td>
+<td><input type=\"text\" name=\"name\" /></td>
+<td><input type=\"text\" name=\"lport\" /></td>
+<td><input type=\"text\" name=\"dport\" /></td>
+<td>
+<select name=\"cert\" >
+"
+for pem in  /home/admin/etc/ssl/*.pem; 
+do 
+  file=$(echo " ${pem%.*}" | xargs basename)
+  echo "<option value=\"$file\">$file</option>"
+done
+
+echo "
+</select>
+</td>
+<td><input type=\"submit\" /></td>
+</tr>
+</form>
+</table>
+"
+
+cat $templatedir/footer.template

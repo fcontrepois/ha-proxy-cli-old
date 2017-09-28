@@ -1,0 +1,28 @@
+coppia di cartelle in mirror
+root e binroot
+
+root contiene file di config
+binroot contiene eseguibili
+
+ogni file di root contiene delle coppie nome=valore
+
+ogni eseguibile è legato a uno o piu file in root
+
+ogni eseguibile puo fare le seguenti operazioni base
+  * get nome (per ogni nome possibile dentro il file corrispondente in root)
+se viene solo letto il valore basta indicare return 0
+se sono richieste attività basta eseguirle, farne l'echo e restituire 0
+
+  * set  nome (per ogni nome possibile dentro il file corrispondente in root)
+se il dato è RO fare return 1
+se il dato è solo da scrivere nel file fare return 0
+se sono richeste altre attività eseguire e fare return 0 
+
+  * init
+crea eventuali file necessari in root
+
+  * commit
+file in root -> sistema
+
+  * refresh
+sistema -> file in root

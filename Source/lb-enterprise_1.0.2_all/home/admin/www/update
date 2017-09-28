@@ -1,0 +1,80 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+appdir=/home/admin/root/appliance
+appbindir=/home/admin/binroot/appliance
+
+updatedir=/home/admin/update
+
+txt=""
+
+update(){
+  file=$1
+  [ ! -f $updatedir/$file ] && return 1
+  newname=${file%%_*}.new.deb
+  oldname=${file%%_*}.old.deb
+  rolldir="$updatedir/rollback/"
+  if [ -f $rolldir/$newname ]; then
+    mv $rolldir/$newname $rolldir/$oldname
+  fi
+  mv $updatedir/$file $rolldir/$newname 
+  txt=$(sudo dpkg -i $rolldir/$newname )
+  exit
+}
+
+delete(){
+  file=$1
+  [ -w $updatedir/$file ] && rm $updatedir/$file 
+}
+
+getquery
+action=$( get_parameter $query action )
+file=$( get_parameter $query file )
+case $action in
+ "update")
+   if [ ! -z $file ]; then
+     sudo /usr/local/sbin/remountrw
+     update $file 
+     sudo /usr/local/sbin/remountro
+   fi
+ ;;
+ "delete")
+   if [ ! -z $file ]; then
+     sudo /usr/local/sbin/remountrw
+     delete $file 
+     sudo /usr/local/sbin/remountro
+   fi
+ ;;
+esac
+
+currver=$(dpkg -l | grep lb-pro | awk '{print $3}')
+
+cat $templatedir/header.template
+
+echo "
+<p>Current version $currver</p>
+<p>Files in the upload directory</p>
+<table>
+"
+
+for path in /home/admin/update/*; do 
+  file=$(basename $path) 
+  if [ "$file" = "*" ]; then
+    echo "<tr><td>no file</td></tr>"
+  else
+    [ -f $path ] && echo "<tr>
+        <td>$file</td>
+          <td><a href=\"update?action=update&file=$file\">update</a></td>
+          <td><a href=\"update?action=delete&file=$file\">delete</a></td>
+        </tr>"
+  fi
+done
+
+echo "</table>
+$txt
+"
+
+
+cat $templatedir/footer.template

@@ -1,0 +1,150 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+lbdir=/home/admin/root/lb
+
+getquery
+action=$( get_parameter $query "action" )
+backendname=$( get_parameter $query "backendname" )
+
+case $action in
+  "newbackend")
+    sudo /usr/local/sbin/remountrw
+    mkdir $lbdir/backend_$backendname
+    echo "balance*=roundrobin" > $lbdir/backend_$backendname/balance
+    echo "mode*=http" > $lbdir/backend_$backendname/mode
+    echo "log*=global" > $lbdir/backend_$backendname/log
+    sudo /usr/local/sbin/remountro
+  ;;
+  "deletesrv")
+   srvid=$( get_parameter $query "srvid" )
+   sudo /usr/local/sbin/remountrw
+   rm $lbdir/backend_$backendname/server_$srvid
+   sudo /usr/local/sbin/remountro
+  ;;
+  "configbalance")
+   balance=$( get_parameter $query "balance" )
+   sudo /usr/local/sbin/remountrw
+   echo "balance*=$balance" > $lbdir/backend_$backendname/balance
+    sudo /usr/local/sbin/remountro
+  ;;
+  "configmode")
+   mode=$( get_parameter $query "mode" )
+   sudo /usr/local/sbin/remountrw
+   echo "mode*=$mode" > $lbdir/backend_$backendname/mode
+   sudo /usr/local/sbin/remountro
+  ;;
+  "configcookie")
+   cookie=$( get_parameter $query "cookie" )
+   sudo /usr/local/sbin/remountrw
+   if [ -z $cookie ]; then
+     rm $lbdir/backend_$backendname/cookie
+   else
+     secondElement=$(echo $cockie | awk '{print $2}')
+     if [  -z $secondElement ]; then
+       echo "cookie*=$cookie insert indirect nocache" > $lbdir/backend_$backendname/cookie
+     else
+       echo "cookie*=$cookie" > $lbdir/backend_$backendname/cookie
+     fi
+   fi
+    sudo /usr/local/sbin/remountro
+  ;;
+  "enablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    echo "option*=httpclose" > $lbdir/backend_$backendname/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+  "disablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    rm $lbdir/backend_$backendname/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+esac
+
+totsession=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $backendname | grep BACKEND | cut -d ',' -f '8')
+
+cat $templatedir/header.template
+echo  "
+<h2>UaR backend $backendname ( $totsession session managed ) </h2>
+<a href=\"/lb-hp\">lb homepage</a>
+<a href=\"/lb-hp?action=delbackend&backendname=$backendname\">Delete Backend</a>
+<table border=\"1\">
+"
+
+value=$(getValue $lbdir/backend_$backendname/balance 'balance\*')
+echo "<form action=\"/backend\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configbalance\" />
+<input type=\"hidden\" name=\"backendname\" value=\"$backendname\" />
+<tr><td>balance</td><td><select name=\"balance\" > "
+    echo "
+    <option value=\"$value\"> $value </option> 
+    <option value=\"roundrobin\">  roundrobin </option>
+    <option value=\"source\"> source </option> 
+    <option value=\"leastconn\"> leastconn </option> 
+    <option value=\"uri\"> uri </option> "
+echo "</select></td><td><input type=\"submit\" /></td></tr>
+</form>"
+
+_mode=$(getValue $lbdir/backend_$backendname/mode 'mode\*')
+echo "
+<form action=\"/backend\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configmode\" />
+<input type=\"hidden\" name=\"backendname\" value=\"$backendname\" />
+<tr><td>mode</td><td><select name=\"mode\" >
+ <option value=\"$mode\"> $_mode </option> 
+ <option value=\"http\"> http </option> 
+ <option value=\"tcp\">  tcp </option>
+</select></td><td><input type=\"submit\" /></td><td></td></tr>
+</form>"
+
+if [ -f  $lbdir/backend_$backendname/cookie ] ;then
+  value=$(getValue $lbdir/backend_$backendname/cookie 'cookie\*')
+else
+  value=""
+fi
+echo "<form action=\"/backend\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configcookie\" />
+<input type=\"hidden\" name=\"backendname\" value=\"$backendname\" />
+<tr><td>cookie</td><td><input type=\"text\" name=\"cookie\" value=\"$value\" /></td><td><input type=\"submit\" /></td></tr>
+</form>"
+
+echo "</table>"
+
+echo "<p>"
+# httpclose
+if [ -f $lbdir/backend_$backendname/option_httpclose ];then
+  echo "<a href=\"/backend?backendname=$backendname&action=disablehttpclose\">Disable http close</a>"
+else
+  echo "<a href=\"/backend?backendname=$backendname&action=enablehttpclose\">Enable http close</a>"
+fi
+
+echo "</p>"
+
+
+echo "<p> Servers </p>"
+echo " <table border=\"1\">"
+echo "<tr><th>Name</th><th>listen</th><th>status</th><th>sessions</th><th>action</th></tr>"
+for file in $lbdir/backend_$backendname/server_*; do
+  [ "$lbdir/backend_$backendname/server_*" = "$file" ] && break
+  id=${file##*_}
+  name=$(getValue $file 'server\*')
+  ip=$(getValue $file 'ip\*')
+  cookie=$(getValue $file 'cookie\*')
+  status=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket 2>/dev/null  | grep "^$backendname" | grep $name | grep -v BACKEND | cut -d ',' -f 18)
+  stats=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep "^$backendname" | grep $name | cut -d ',' -f "8 18")
+  status=$(echo $stats | cut -d ',' -f 2)
+  sess=$(echo $stats | cut -d ',' -f 1)
+  echo "<tr>
+    <td><a href=\"/srv?backendname=$backendname&srvid=$id\" >$name</a></td>
+    <td>$ip</td>
+    <td>$status</td>
+    <td>$sess</td>
+    <td><a href=\"?action=deletesrv&backendname=$backendname&srvid=$id\">delete</a>
+  </tr>"
+done
+echo "</table>"
+echo "<p> <a href=\"srv?backendname=$backendname&action=empty\">new server</a></p>"
+
+cat $templatedir/footer.template

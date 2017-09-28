@@ -1,0 +1,94 @@
+#!/bin/bash 
+
+source /home/admin/lib/cli
+source /home/admin/lib/ha
+
+execfullpath="$0"
+filename=$(basename $execfullpath)
+BINCURRENTPATH=$(dirname $execfullpath)
+CURRENTPATH=$(echo $BINCURRENTPATH | sed 's/binroot/root/')
+conffile="$CURRENTPATH/$filename"
+
+up_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  pgrep ucarp | wc -l
+  return 0
+}
+
+up_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+master_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  [ ! -r $ucarpconfig ] && echo 0 && return 1
+  source $ucarpconfig
+  $IFCONFIG | grep -q $INTERFACE
+  if [ $? -eq 0 ];then
+    echo 1 
+  else
+    echo 0
+  fi
+  return 0
+}
+
+master_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  echo "Read Only Option"
+  return 1
+}
+
+refresh(){
+  # set the value of the file to current running values
+  # from system -> file
+  echo "$filename refresh"
+  echo "up=">$conffile
+  echo "master=">>$conffile
+  return 0
+}
+
+commit(){
+  # activate the configuration of this file
+  # file -> system
+  echo "$filename commit"
+  _up=$(getValue status up)
+  echo "ha status requested is $_up"
+  [ ! -r $ucarpconfig ] && echo "no config available" && return 1
+  if [ $_up -eq 1 ];then
+    sudo /etc/init.d/ha start
+  else
+    sudo /etc/init.d/ha stop
+  fi
+  return 0
+}
+
+init(){
+  # create the config(s) file(s)
+  # starting
+  echo "$filename init"
+  echo "up=">$conffile
+  echo "master=">>$conffile
+  return 0
+}
+
+touch(){
+  # in case of creation of a new file 
+  file=$1
+  [ -z $file ] && return 2
+  return 0
+}
+
+### main
+
+action=$1
+[ -z action ] && return 2
+shift
+option=$1
+shift
+value=$*
+execute $action $option $value

@@ -1,0 +1,1 @@
+ls -1 *.deb | while read name; do mname=$(echo $name | sed 's/_.*$//');echo $mname; mkdir $mname; (cd $mname; dpkg -x ../$name . ; dpkg -e ../$name); done

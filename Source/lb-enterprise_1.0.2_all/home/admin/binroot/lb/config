@@ -1,0 +1,134 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/lb
+
+execfullpath="$0"
+filename=$(basename $execfullpath)
+BINCURRENTPATH=$(dirname $execfullpath)
+CURRENTPATH=$(echo $BINCURRENTPATH | sed 's/binroot/root/')
+conffile="$CURRENTPATH/$filename"
+
+generateConfig(){
+# global and defaults
+rm $conffile
+touch $conffile
+for dir in global defaults ; do 
+  echo "$dir" | sed 's/_/ /' >> $conffile
+  ls -1 $CURRENTPATH/$dir | while read file; do 
+    cleanfile=${file%%_*}
+    echo -n "  $cleanfile " >> $conffile
+    cat $CURRENTPATH/$dir/$file | while read line; do
+      option=$(echo $line | cut -d '=' -f 1); 
+      value=$(echo $line |cut -d '=' -f 2); 
+      echo $option | grep -q '*'; 
+      if [ $? -eq 0 ]; 
+        then   
+          echo -n "$value " >> $conffile
+        else 
+          echo -n "$option $value " >> $conffile
+      fi; 
+    done ; 
+    echo "" >> $conffile
+  done; 
+  echo "" >> $conffile
+done  
+
+# farms
+for dir in $CURRENTPATH/listen_*; do
+  farm=$(basename $dir)
+  farm_name=${farm#*_}
+  [ "$farm_name" = '*' ] && break
+  echo "listen $farm_name" >> $conffile
+  ls -1 $dir | while read file; do 
+    cleanfile=${file%%_*}
+    echo -n "  $cleanfile " >> $conffile
+    cat $dir/$file | while read line; do
+      option=$(echo $line | cut -d '=' -f 1 | sed '/\*/d');
+      value=$(echo $line |cut -d '=' -f 2); 
+      echo -n "$option $value " >> $conffile
+    done ; 
+    echo "" >> $conffile
+  done; 
+done
+
+# frontend
+for dir in $CURRENTPATH/frontend_*; do
+  vip=$(basename $dir)
+  vipname=${vip#*_}
+  [ "$vipname" = '*' ] && break
+  echo "" >> $conffile
+  echo "frontend $vipname" >> $conffile
+
+  ls -1 $dir | while read file; do 
+    cleanfile=${file%%_*}
+    [ "$cleanfile" = "use" ] && cleanfile="use_backend"
+    [ "$cleanfile" = "default" ] && cleanfile="default_backend"
+    echo -n "  $cleanfile " >> $conffile
+    cat $dir/$file | while read line; do
+      option=$(echo $line | cut -d '=' -f 1 | sed '/\*/d');
+      value=$(echo $line |cut -d '=' -f 2); 
+      echo $option | grep -q '*'; 
+      echo -n "$option $value " >> $conffile
+    done ; 
+    echo "" >> $conffile
+  done; 
+done
+
+# backend
+for dir in $CURRENTPATH/backend_*; do
+  backend=$(basename $dir)
+  backendname=${backend#*_}
+  [ "$backendname" = '*' ] && break
+  echo "" >> $conffile
+  echo "backend $backendname" >> $conffile
+  ls -1 $dir | while read file; do 
+    cleanfile=${file%%_*}
+    echo -n "  $cleanfile " >> $conffile
+    cat $dir/$file | while read line; do
+      option=$(echo $line | cut -d '=' -f 1 | sed '/\*/d');
+      value=$(echo $line |cut -d '=' -f 2); 
+      echo -n "$option $value " >> $conffile
+    done ; 
+    echo "" >> $conffile
+  done; 
+done
+}
+
+refresh(){
+  # set the value of the file to current running values
+  # from system -> file
+  echo "$filename refresh"
+  generateConfig
+  return 0
+}
+
+commit(){
+  # activate the configuration of this file
+  # file -> system
+  echo "$filename commit"
+  cp $conffile $lbconfig
+  return 0
+}
+
+init(){
+  # create the config(s) file(s)
+  # starting
+  echo "$filename init"
+  echo "" > $conffile
+  return 0
+}
+
+### main
+
+action=$1
+[ -z $action ] && return 2
+shift
+option=$1
+shift
+value=$*
+if [ "$option" = "get" ] ; then
+  echo ""
+else
+  execute $action $option $value
+fi

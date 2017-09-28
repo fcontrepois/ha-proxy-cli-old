@@ -1,0 +1,14 @@
+source /home/admin/lib/common_bash
+
+lbconfig=/home/admin/etc/lb/lb.config
+lbexec=/home/admin/bin/lb
+
+checkconfig(){
+  $lbexec -f $1 -c
+  if [ $? -eq 0 ]; then
+    echo "OK"
+  else
+    echo "KO"
+  fi
+}
+

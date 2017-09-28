@@ -1,0 +1,224 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/ha
+
+execfullpath="$0"
+filename=$(basename $execfullpath)
+BINCURRENTPATH=$(dirname $execfullpath)
+CURRENTPATH=$(echo $BINCURRENTPATH | sed 's/binroot/root/')
+conffile="$CURRENTPATH/$filename"
+
+base_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+base_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+if_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+if_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+instance_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+instance_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+password_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+password_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+vip_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+vip_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+vnetmask_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+vnetmask_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+srcip_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+srcip_set(){
+  # check if the value is good to be writen to the file 
+  # in case of a read only var just return 1
+  return 0 
+}
+
+refresh(){
+  # set the value of the file to current running values
+  # from system -> file
+  echo "$filename refresh"
+  [ ! -r $ucarpconfig ] && return 0
+  source $ucarpconfig
+  cat <<EOF > $conffile
+vip=$VIRTUAL_ADDRESS
+vnetmask=$VIRTUAL_NETMASK
+base=$UCARP_BASE
+if=${INTERFACE%%:*}
+srcip=$SRCIP
+instance=$INSTANCE_ID
+password=$PASSWORD
+EOF
+unset VIRTUAL_ADDRESS VIRTUAL_NETMASK UCARP_BASE INTERFACE SRCIP INSTANCE_ID PASSWORD
+  return 0
+}
+
+commit(){
+  # activate the configuration of this file
+  # file -> system
+  echo "$filename commit"
+  _base=$(getValue $conffile base)
+  _if=$(getValue $conffile if)
+  _srcip=$(getValue /home/admin/root/appliance/network/$_if ip)
+  _instance=$(getValue $conffile instance)
+  _password=$(getValue $conffile password)
+  _vip=$(getValue $conffile vip)
+  _vnetmask=$(getValue $conffile vnetmask)
+  refresh
+#  echo "[$_base] [$_if] [$_srcip] [$_instance] [$_password] [$_vip] [$_vnetmask]"
+cat << EOF > $ucarpconfig
+# Copyright 2005 Mike Glenn & Homechicken Software
+# Distributed under the terms of the GNU General Public License v2
+
+# Location of the ucarp executable
+UCARP_EXEC=/usr/sbin/ucarp
+IFCONFIG=/sbin/ifconfig
+
+#
+# Location of the ucarp pid file
+UCARP_PIDFILE=$ucarppid
+
+#
+# ucarp options
+# -z run shudown script on exit
+# -P force perferred master
+OPTIONS="-z"
+
+#
+# ucarp base, lower number will be perfered master
+# set to same to have master stay alive as long as possible
+UCARP_BASE=$_base
+
+#
+# Interface for Ipaddress
+INTERFACE=${_if}:1
+
+#
+# Source Ip 
+SRCIP=$_srcip
+
+#
+# Instance id
+# any number from 1 to 255
+# Master and Backup need to be the same
+INSTANCE_ID=$_instance
+
+#
+# Password so servers can trust who they are talking to
+PASSWORD=$_password
+
+## The start and stop scripts
+START_SCRIPT=/home/admin/etc/ha/vip-up.sh
+STOP_SCRIPT=/home/admin/etc/ha/vip-down.sh
+
+#
+# The Application Address that will failover
+VIRTUAL_ADDRESS=$_vip
+#VIRTUAL_BROADCAST=
+VIRTUAL_NETMASK=$_vnetmask
+
+#
+# The Maintanence Address of the local machine
+SOURCE_ADDRESS=$_srcip
+
+#
+# DO NOT EDIT BELOW THIS LINE! (one line)
+UCARP_OPTS="\$OPTIONS --advbase=\$UCARP_BASE  --interface=\$INTERFACE --srcip=\$SRCIP --vhid=\$INSTANCE_ID \
+ --pass=\$PASSWORD --upscript=\$START_SCRIPT --downscript=\$STOP_SCRIPT --addr=\$VIRTUAL_ADDRESS"
+EOF
+return 0
+}
+
+init(){
+  # create the config(s) file(s)
+  # starting
+  echo "$filename init"
+  _srcip=$(getValue /home/admin/root/appliance/network/eth0 ip)
+  cat <<EOF > $conffile
+vip=
+vnetmask=255.255.255.0
+base=1
+if=eth0
+srcip=$_srcip
+instance=42
+password=caokaoe9
+EOF
+  refresh
+  return 0
+}
+
+touch(){
+  # in case of creation of a new file 
+  file=$1
+  [ -z $file ] && return 2
+  return 0
+}
+
+### main
+
+action=$1
+[ -z action ] && return 2
+shift
+option=$1
+shift
+value=$*
+execute $action $option $value

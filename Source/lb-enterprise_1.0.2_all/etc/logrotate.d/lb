@@ -1,0 +1,8 @@
+/var/log/lb.log {
+        daily
+        missingok
+        rotate 12
+        compress
+        notifempty
+	create 640 admin admin
+}

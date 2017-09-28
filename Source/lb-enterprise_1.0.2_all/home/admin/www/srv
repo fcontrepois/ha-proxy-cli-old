@@ -1,0 +1,148 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+lbdir=/home/admin/root/lb
+
+getValues(){
+_file=$1
+if [ -f $_file ]; then
+  name=$(getValue $_file "server\*")
+  ip=$(getValue $_file "ip\*")
+  port=${ip##*:}
+  ip=${ip%%:*}
+  cookie=$(getValue $_file cookie)
+  check=$(getValue $_file "check\*")
+  maxconn=$(getValue $_file maxconn)
+  weight=$(getValue $_file weight)
+  backup=$(getValue $_file "backup\*")
+fi
+}
+
+getquery
+action=$( get_parameter $query "action" )
+farmname=$( get_parameter $query "farmname" )
+backendname=$( get_parameter $query "backendname" )
+srvid=$( get_parameter $query "srvid" )
+
+if [ ! -z "$farmname" ]; then
+  ISFARM=1
+  mypath=$lbdir/listen_$farmname
+  file=$mypath/server_$srvid
+else
+  ISFARM=0
+  mypath=$lbdir/backend_$backendname
+  file=$mypath/server_$srvid
+fi
+
+getValues $file
+
+case $action in
+  "addsrv")
+     _srvname=$( get_parameter $query "srvname" )
+     _srvip=$( get_parameter $query "srvip" )
+     _srvport=$( get_parameter $query "srvport" )
+     _srvcookie=$( get_parameter $query "srvcookie" )
+     _check=$( get_parameter $query "check" )
+     _maxconn=$( get_parameter $query "maxconn" )
+     _weight=$( get_parameter $query "weight" )
+     _backup=$( get_parameter $query "backup" )
+     sudo /usr/local/sbin/remountrw
+     echo "server*=$_srvname" >  $file
+     echo "ip*=$_srvip:$_srvport" >>  $file
+     [ ! -z $_srvcookie ] && echo "cookie=$_srvcookie" >>  $file
+     echo "check*=$_check" >>  $file
+     if [ ! -z $_maxconn ] ; then
+       echo "maxconn=$_maxconn" >> $file
+     fi
+     if [ ! -z $_weight ] ; then
+       echo "weight=$_weight" >>  $file
+     fi
+     echo "backup*=$_backup" >>  $file
+     sudo /usr/local/sbin/remountro
+     getValues $file
+  ;;
+  "empty")
+  lastId=$(ls $mypath/server_* 2>/dev/null | sed 's/^.*_//' | sort -g  | tail -1)
+  if [ -z $lastId ] ; then
+    srvid=0
+  else
+    srvid=$(($lastId + 1))
+  fi 
+  name="newone"
+  ip="127.0.0.1"
+  port="80"
+  cookie=""
+  check="check"
+  maxconn=""
+  weight="1"
+  backup=""
+  ;;
+esac
+
+if [ "$ISFARM" = "1" ]; then
+  status=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $farmname 2>/dev/null | grep $name 2>/dev/null | cut -d ',' -f 18)
+else
+  status=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $backendname 2>/dev/null | grep $name 2>/dev/null | cut -d ',' -f 18)
+fi
+
+[ "$status" = "" ] && status="unknown"
+
+[ "$check" = "check" ] && checkbox="checked=\"checked\""
+[ "$backup" = "backup" ] && backupbox="checked=\"checked\""
+
+cat $templatedir/header.template
+echo  "
+<h2>UaR server $srvname </h2>
+<a href=\"/lb-hp\">lb homepage</a>"
+if [ "$ISFARM" = "1" ]; then
+  echo "<a href=\"/farm?farmname=$farmname\">farm homepage</a>
+   <a href=\"/farm?action=deletesrv&farmname=$farmname&srvid=$srvid\">Delete Server</a>"
+else
+  echo "<a href=\"/backend?backendname=$backendname\">backend homepage</a>
+   <a href=\"/backend?action=deletesrv&backendname=$backendname&srvid=$srvid\">Delete Server</a>"
+fi
+
+echo "<p> Servers $name</p>
+<form action=\"/srv\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"addsrv\" />
+"
+if [ "$ISFARM" = "1" ]; then
+  echo "<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />"
+else
+  echo "<input type=\"hidden\" name=\"backendname\" value=\"$backendname\" />"
+fi
+
+echo "
+<input type=\"hidden\" name=\"srvid\" value=\"$srvid\" />"
+echo " <table class=\"options\">"
+  echo "
+    <tr> 
+         <th>name</th> <td><input type=\"text\" name=\"srvname\" value=\"$name\"></input></td>
+         <th>Status</th> <td>$status</td> 
+    </tr>
+    <tr> 
+         <th>IP</th> <td><input type=\"text\" name=\"srvip\" value=\"$ip\" size=\"15\" maxlength=\"15\" ></input></td> 
+         <th>port</th> <td><input type=\"text\" name=\"srvport\" value=\"$port\" size=\"5\" maxlength=\"5\" ></input></td>
+    </tr>
+    <tr> 
+         <th>check</th> <td><input type=\"checkbox\" name=\"check\" value=\"check\" $checkbox></td> 
+         <th>cookie</th> <td><input type=\"text\" name=\"srvcookie\" value=\"$cookie\" ></input></td> 
+    </tr>
+    <tr> 
+         <th>maxconn</th> <td><input type=\"text\" name=\"maxconn\" value=\"$maxconn\" size=\"5\" maxlength=\"5\" ></td> 
+         <th>weight</th> <td><input type=\"text\" name=\"weight\" value=\"$weight\" size=\"4\" maxlength=\"4\"></td> 
+    </tr>
+    <tr> 
+         <th>backup</th> <td><input type=\"checkbox\" name=\"backup\" value=\"backup\" $backupbox></td></tr>
+"
+
+echo "
+</table>
+<input type=\"submit\"/>
+</form>
+"
+
+
+cat $templatedir/footer.template

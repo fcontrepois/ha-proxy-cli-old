@@ -1,0 +1,24 @@
+#!/bin/bash
+
+source /home/admin/lib/alert
+
+/home/admin/bin/finddown | while read farm srv status; do
+  basefilename="${farm}_${srv}"
+  ls $alertdir/$basefilename.* >/dev/null 2>&1
+  errno=$?
+  if [ $errno -ne 0 ]; then
+cat > $alertdir/$basefilename.5m << EOF
+status=\$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep "^$farm" | grep $srv | cut -d ',' -f "18")
+
+# KO
+[ "\$status" = "DOWN" ] && echo "$farm/$srv DOWN^$farm/$srv is DOWN"  && exit 1
+
+# OK
+echo "$farm/$srv UP^$farm/$srv is UP"
+exit 0
+EOF
+    chmod +x $alertdir/$basefilename.5m 
+    echo  "Server $farm/$srv is DOWN^Server $farm/$srv is DOWN"
+    exit 1 
+ fi
+done

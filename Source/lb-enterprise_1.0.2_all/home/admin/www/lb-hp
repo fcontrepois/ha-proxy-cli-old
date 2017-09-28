@@ -1,0 +1,224 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+source /home/admin/lib/lb
+
+lbdir=/home/admin/root/lb
+lbbindir=/home/admin/binroot/lb
+
+cfgmessage=$(checkconfig $lbdir/config)
+
+getquery
+action=$( get_parameter $query action )
+farmname=$( get_parameter $query farmname )
+vipname=$( get_parameter $query vipname )
+backendname=$( get_parameter $query backendname )
+case $action in
+ "delfarm")
+    sudo /usr/local/sbin/remountrw
+    rm -r $lbdir/listen_$farmname
+    sudo /usr/local/sbin/remountro
+ ;;
+ "delvip")
+    sudo /usr/local/sbin/remountrw
+    rm -r $lbdir/frontend_$vipname
+    sudo /usr/local/sbin/remountro
+ ;;
+ "delbackend")
+    sudo /usr/local/sbin/remountrw
+    rm -r $lbdir/backend_$backendname
+    MSG="rm -r $lbdir/backend_$backendname"
+    sudo /usr/local/sbin/remountro
+ ;;
+ "activateconfig")
+  if [ "$cfgmessage" = "OK" ]; then
+    sudo /usr/local/sbin/remountrw
+    cp $lbdir/config $lbconfig
+    sudo /usr/local/sbin/remountro
+    up=$(getValue $lbdir/status up)
+    if [ "$up" != "0" ]; then
+      /home/admin/bin/lb.cmd stop
+    fi
+    /home/admin/bin/lb.cmd start
+    restart="restarted"
+  fi
+  ;;
+ "lbup")
+  if [ "$cfgmessage" = "OK" ]; then
+    /home/admin/bin/lb.cmd start
+  fi
+  ;;
+ "lbdown")
+  if [ "$cfgmessage" = "OK" ]; then
+    /home/admin/bin/lb.cmd stop
+  fi
+  ;;
+  "enablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    echo "option*=httpclose" > /home/admin/root/lb/defaults/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+  "disablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    rm /home/admin/root/lb/defaults/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+  "disablehttplog")
+    sudo /usr/local/sbin/remountrw
+    rm /home/admin/root/lb/defaults/option_httplog
+    sudo /usr/local/sbin/remountro
+  ;;
+  "enablehttplog")
+    sudo /usr/local/sbin/remountrw
+    echo "option*=httplog" > /home/admin/root/lb/defaults/option_httplog
+    sudo /usr/local/sbin/remountro
+  ;;
+  "disabletcplog")
+    sudo /usr/local/sbin/remountrw
+    rm /home/admin/root/lb/defaults/option_tcplog
+    sudo /usr/local/sbin/remountro
+  ;;
+  "enabletcplog")
+    sudo /usr/local/sbin/remountrw
+    echo "option*=tcplog" > /home/admin/root/lb/defaults/option_tcplog
+    sudo /usr/local/sbin/remountro
+  ;;
+esac
+
+sudo /usr/local/sbin/remountrw
+$lbbindir/config refresh > /dev/null 2>&1
+$lbbindir/status refresh > /dev/null 2>&1
+sudo /usr/local/sbin/remountro
+
+
+up=$(getValue $lbdir/status up)
+if [ "$up" != "0" ]; then
+  upstring="<a href=\"lb-hp?action=lbdown\" > up </a> $restart"
+else
+  upstring="<a href=\"lb-hp?action=lbup\" > down </a>"
+fi
+
+cfgmessage=$(checkconfig $lbdir/config)
+
+cat $templatedir/header.template
+echo  "
+<h2>UaR Load Balancer Enterprise Ed. Version 1.0</h2>
+
+
+<p><a href=\"/lb-hp\"> Reload </a></p>
+<p>status: $upstring</p>
+<p><a href=\"lb-hp?action=activateconfig\" >activate config</a> config status: $cfgmessage </p>
+"
+if [ "$cfgmessage" = "KO" ]; then
+echo "<textarea cols=\"60\" rows=\"4\">"
+  /home/admin/bin/lb -f $lbdir/config -c 2>&1 |sed "s/^[^:]*://" | sed 's|/home/admin/root/lb/||' 
+echo "</textarea>"
+fi
+
+echo "<p>"
+# httplog
+if [ -f /home/admin/root/lb/defaults/option_httpclose ];then
+  echo "<a href=\"/lb-hp?action=disablehttplog\">Disable http log</a>"
+else
+  echo "<a href=\"/lb-hp?action=enablehttplog\">Enable http log</a>"
+fi
+
+# tcplog
+if [ -f /home/admin/root/lb/defaults/option_tcplog ];then
+  echo "<a href=\"/lb-hp?action=disabletcplog\">Disable tcp log</a>"
+else
+  echo "<a href=\"/lb-hp?action=enabletcplog\">Enable tcp log</a>"
+fi
+
+# httpclose
+if [ -f /home/admin/root/lb/defaults/option_httpclose ];then
+  echo "<a href=\"/lb-hp?action=disablehttpclose\">Disable http close</a>"
+else
+  echo "<a href=\"/lb-hp?action=enablehttpclose\">Enable http close</a>"
+fi
+
+echo "</p>"
+
+echo "
+<table>
+  <tr><th>Farm</th><th>mode</th><th>status</th><th>sessions</th><th>action</th></tr>
+"
+for dir in $lbdir/listen_*; do
+   dirname=$(basename $dir)
+   farmname=${dirname##*_}
+   [ "$farmname" = '*' ] && echo "<tr><td>no farm</td></tr>" && break
+   mode=$(cat $dir/mode | sed 's/^[^=]*=//')
+   stats=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $farmname | grep FRONTEND | cut -d ',' -f "8 18")
+   status=$(echo $stats | cut -d ',' -f 2)
+   sess=$(echo $stats | cut -d ',' -f 1)
+   echo "<tr><td><a href=\"/farm?farmname=$farmname\">$farmname</a></td><td>$mode</td><td>$status</td><td>$sess</td><td><a href=\"?action=delfarm&farmname=$farmname\">del farm</a></td></tr>"
+done
+
+echo "
+</table>
+<p>
+  <form action=\"/farm\" method=\"get\">
+    <input type=\"hidden\" name=\"action\" value=\"newfarm\" />
+    <input type=\"text\" name=\"farmname\" />
+    <input type=\"submit\" value=\"new farm\"/>
+  </form>
+</p>
+<hr />
+"
+
+echo "
+<table>
+  <tr><th>VIP</th><th>mode</th><th>status</th><th>sessions</th><th>action</th></tr>
+"
+for dir in $lbdir/frontend_*; do
+   dirname=$(basename $dir)
+   vipname=${dirname##*_}
+   [ "$vipname" = '*' ] && echo "<tr><td>no vip</td></tr>" && break
+   mode=$(cat $dir/mode | sed 's/^[^=]*=//')
+   stats=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $vipname | grep FRONTEND | cut -d ',' -f "8 18")
+   status=$(echo $stats | cut -d ',' -f 2)
+   sess=$(echo $stats | cut -d ',' -f 1)
+   echo "<tr><td><a href=\"/vip?vipname=$vipname\">$vipname</a></td><td>$mode</td><td>$status</td><td>$sess</td><td><a href=\"?action=delvip&vipname=$vipname\">del vip</a></td></tr>"
+done
+
+echo "
+</table>
+<p>
+  <form action=\"/vip\" method=\"get\">
+    <input type=\"hidden\" name=\"action\" value=\"newvip\" />
+    <input type=\"text\" name=\"vipname\" />
+    <input type=\"submit\" value=\"new vip\"/>
+  </form>
+</p>
+<hr />
+"
+
+echo "
+<table>
+  <tr><th>Backend</th><th>mode</th><th>status</th><th>sessions</th><th>action</th></tr>
+"
+for dir in $lbdir/backend_*; do
+   dirname=$(basename $dir)
+   backendname=${dirname##*_}
+   [ "$backendname" = '*' ] && echo "<tr><td>no backend</td></tr>" && break
+   mode=$(cat $dir/mode | sed 's/^[^=]*=//')
+   stats=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $backendname | grep 	BACKEND | cut -d ',' -f "8 18")
+   status=$(echo $stats | cut -d ',' -f 2)
+   sess=$(echo $stats | cut -d ',' -f 1)
+   echo "<tr><td><a href=\"/backend?backendname=$backendname\">$backendname</a></td><td>$mode</td><td>$status</td><td>$sess</td><td><a href=\"/lb-hp?action=delbackend&backendname=$backendname\">del backend</a></td></tr>"
+done
+
+echo "
+</table>
+<p>
+  <form action=\"/backend\" method=\"get\">
+    <input type=\"hidden\" name=\"action\" value=\"newbackend\" />
+    <input type=\"text\" name=\"backendname\" />
+    <input type=\"submit\" value=\"new backend\"/>
+  </form>
+</p>
+<hr />
+"
+
+cat $templatedir/footer.template

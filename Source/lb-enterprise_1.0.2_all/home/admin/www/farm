@@ -1,0 +1,326 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+lbdir=/home/admin/root/lb
+
+getquery
+action=$( get_parameter $query "action" )
+farmname=$( get_parameter $query "farmname" )
+
+case $action in
+  "newfarm")
+    sudo /usr/local/sbin/remountrw
+    farmname=$(echo $farmname | tr _ - )
+    mkdir $lbdir/listen_$farmname
+    echo "bind*=*:80" > $lbdir/listen_$farmname/bind
+    echo "balance*=roundrobin" > $lbdir/listen_$farmname/balance
+    echo "mode*=tcp" > $lbdir/listen_$farmname/mode
+    echo "log*=global" > $lbdir/listen_$farmname/log
+    #echo "cookie*=" > $lbdir/listen_$farmname/cookie
+    sudo /usr/local/sbin/remountro
+  ;;
+  "deletesrv")
+   srvid=$( get_parameter $query "srvid" )
+   sudo /usr/local/sbin/remountrw
+   rm $lbdir/listen_$farmname/server_$srvid
+   sudo /usr/local/sbin/remountro
+  ;;
+  "configbind")
+   bind=$( get_parameter $query "bind" )
+   sudo /usr/local/sbin/remountrw
+   echo "bind*=$bind" > $lbdir/listen_$farmname/bind
+    sudo /usr/local/sbin/remountro
+  ;;
+  "configbalance")
+   balance=$( get_parameter $query "balance" )
+   sudo /usr/local/sbin/remountrw
+   echo "balance*=$balance" > $lbdir/listen_$farmname/balance
+    sudo /usr/local/sbin/remountro
+  ;;
+  "configmode")
+   mode=$( get_parameter $query "mode" )
+   sudo /usr/local/sbin/remountrw
+   echo "mode*=$mode" > $lbdir/listen_$farmname/mode
+    sudo /usr/local/sbin/remountro
+  ;;
+  "configcookie")
+   cookie=$( get_parameter $query "cookie" )
+   sudo /usr/local/sbin/remountrw
+   if [ -z $cookie ]; then
+     rm $lbdir/listen_$farmname/cookie
+   else
+     secondElement=$(echo $cockie | awk '{print $2}')
+     if [  -z $secondElement ]; then
+       echo "cookie*=$cookie insert indirect nocache" > $lbdir/listen_$farmname/cookie
+     else
+       echo "cookie*=$cookie" > $lbdir/listen_$farmname/cookie
+     fi
+   fi
+    sudo /usr/local/sbin/remountro
+  ;;
+  delacl)
+    aclname=$( get_parameter $query "aclname" )
+    aclline=$( get_parameter $query "line" )
+    sudo /usr/local/sbin/remountrw
+    eval sed -i \'${aclline}d\' $lbdir/listen_$farmname/acl_$aclname
+    aclline=$(wc -l $lbdir/listen_$farmname/acl_$aclname | awk '{print$1}')
+    [ "$aclline" = "0" ] && rm $lbdir/listen_$farmname/acl_$aclname
+    sudo /usr/local/sbin/remountro
+  ;;
+  "newredirect")
+    redirectname=$( get_parameter $query "redirectname" )
+    type=$( get_parameter $query "type" )
+    to=$( get_parameter $query "to" )
+    code=$( get_parameter $query "code" )
+    [ "$code" = "" ] && code="302"
+    option=$( get_parameter $query "option" )
+    cond=$( get_parameter $query "cond" )
+    acl=$( get_parameter $query "redirect_acl" )
+    sudo /usr/local/sbin/remountrw
+    echo "redirect*=$type $to code $code $option $cond $acl" > $lbdir/listen_$farmname/redirect_$redirectname 
+    sudo /usr/local/sbin/remountro
+  ;;
+  "delredirect")
+    redirectname=$( get_parameter $query "redirectname" )
+    sudo /usr/local/sbin/remountrw
+    rm $lbdir/listen_$farmname/redirect_$redirectname
+    sudo /usr/local/sbin/remountro
+  ;;
+  newacl)
+    aclname=$( get_parameter $query "aclname" )
+    aclcriterion=$( get_parameter $query "aclcriterion" )
+    aclflag=$( get_parameter $query "aclflag" )
+    acloperator=$( get_parameter $query "acloperator" )
+    aclvalues=$( get_parameter $query "aclvalues" )
+  
+    sudo /usr/local/sbin/remountrw
+    if [ -f $lbdir/listen_$farmname/acl_$aclname ] ; then
+      echo "$aclname=$aclcriterion $aclflag $acloperator $aclvalues" >> $lbdir/listen_$farmname/acl_$aclname
+    else
+      echo "$aclname=$aclcriterion $aclflag $acloperator $aclvalues" > $lbdir/listen_$farmname/acl_$aclname
+    fi
+    sudo /usr/local/sbin/remountro
+  ;;
+  "enablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    echo "option*=httpclose" > $lbdir/listen_$farmname/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+  "disablehttpclose")
+    sudo /usr/local/sbin/remountrw
+    rm $lbdir/listen_$farmname/option_httpclose
+    sudo /usr/local/sbin/remountro
+  ;;
+  "doc_cookie")
+    DOCcookie="1";
+  ;;
+  "doc_balance")
+    DOCbalance="1";
+  ;;
+  "doc_bind")
+    DOCbind="1";
+  ;;
+
+esac
+
+totsession=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep $farmname | grep FRONTEND | cut -d ',' -f '8')
+
+cat $templatedir/header.template
+echo  "
+<h2>UaR farm $farmname ( $totsession session managed ) </h2>
+<a href=\"/lb-hp\">lb homepage</a>
+<a href=\"/farm?farmname=$farmname\">Refresh</a>
+<a href=\"/lb-hp?action=delfarm&farmname=$farmname\">Delete Farm</a>
+<table border=\"1\">
+"
+
+value=$(getValue $lbdir/listen_$farmname/bind "bind\*")
+echo "<form action=\"/farm\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configbind\" />
+<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+<tr><td>bind</td><td><input type=\"text\" name=\"bind\" value=\"$value\" /></td><td><input type=\"submit\" /></td><td><a href=/farm?farmname=$farmname&action=doc_bind>Help</a></td></tr>
+</form>"
+
+value=$(getValue $lbdir/listen_$farmname/balance "balance\*")
+echo "<form action=\"/farm\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configbalance\" />
+<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+<tr><td>balance</td><td><select name=\"balance\" > "
+    echo "
+    <option value=\"$value\"> $value </option> 
+    <option value=\"roundrobin\">  roundrobin </option>
+    <option value=\"source\"> source </option> 
+    <option value=\"leastconn\"> leastconn </option> 
+    <option value=\"uri\"> uri </option> "
+echo "</select></td><td><input type=\"submit\" /></td><td><a href=/farm?farmname=$farmname&action=doc_balance>Help</a></td></tr>
+</form>"
+
+value=$(getValue $lbdir/listen_$farmname/mode "mode\*")
+echo "<form action=\"/farm\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configmode\" />
+<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+<tr><td>mode</td><td><select name=\"mode\" > "
+ echo "<option value=\"$value\"> $value </option> 
+ <option value=\"http\"> http </option> 
+ <option value=\"tcp\">  tcp </option>"
+echo "</select></td><td><input type=\"submit\" /></td><td></td></tr>
+</form>"
+
+if [ -f  $lbdir/listen_$farmname/cookie ] ;then
+  value=$(getValue $lbdir/listen_$farmname/cookie "cookie\*")
+else
+  value=""
+fi
+echo "<form action=\"/farm\" method=\"get\">
+<input type=\"hidden\" name=\"action\" value=\"configcookie\" />
+<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+
+<tr><td>cookie</td><td><input type=\"text\" name=\"cookie\" value=\"$value\" /></td><td><input type=\"submit\" /></td><td><a href=/farm?farmname=$farmname&action=doc_cookie>Help</a></td></tr>
+</form>"
+
+echo "</table>"
+
+echo "<p>"
+# httpclose
+if [ -f $lbdir/listen_$farmname/option_httpclose ];then
+  echo "<a href=\"/farm?farmname=$farmname&action=disablehttpclose\">Disable http close</a>"
+else
+  echo "<a href=\"/farm?farmname=$farmname&action=enablehttpclose\">Enable http close</a>"
+fi
+
+echo "</p>"
+
+echo "<p> Servers </p>"
+echo " <table border=\"1\">"
+echo "<tr><th>Name</th><th>listen</th><th>status</th><th>sessions</th><th>action</th></tr>"
+for file in $lbdir/listen_$farmname/server_*; do
+  [ "$lbdir/listen_$farmname/server_*" = "$file" ] && break
+  id=${file##*_}
+  name=$(getValue $file "server\*")
+  ip=$(getValue $file "ip\*")
+  cookie=$(getValue $file cookie)
+  stats=""
+  stats=$(printf "show stat \n " | /home/admin/bin/socat - /tmp/lb.socket  | grep "^$farmname" | grep $name | cut -d ',' -f "8 18")
+  status=$(echo $stats | cut -d ',' -f 2)
+  sess=$(echo $stats | cut -d ',' -f 1)
+  echo "<tr>
+    <td><a href=\"/srv?farmname=$farmname&srvid=$id\" >$name</a></td>
+    <td>$ip</td>
+    <td>$status</td>
+    <td>$sess</td>
+    <td><a href=\"?action=deletesrv&farmname=$farmname&srvid=$id\">delete</a>
+  </tr>"
+done
+echo "</table>"
+echo "<p> <a href=\"srv?farmname=$farmname&action=empty\">new server</a></p>"
+
+echo "<h1>Redirect</h1>"
+numredirect=$(ls $lbdir/listen_$farmname/redirect_* | wc -l)
+if [ "$numredirect" = "0" ]; then
+  echo "no redirect available"
+else
+echo "<table border=\"1\">
+<table><tr><th>name</th><th>redirect</th></tr>"
+for file in $lbdir/listen_$farmname/redirect_*; do 
+ redirectname=$(basename $file)
+ redirectname=${redirectname#*_}
+ num=1
+ echo "<tr><th>$redirectname</th><td>$(getValue $file "redirect\*")</td><td><a href=\"farm?farmname=$farmname&action=delredirect&redirectname=$redirectname\">delete</a></td></tr>"
+done
+echo " </table>"  
+fi
+  echo "<form action=\"/farm\" method=\"get\">
+  <input type=\"hidden\" name=\"action\" value=\"newredirect\" />
+  <input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+  <table><tr><th>name</th><th>type</th><th>to</th><th>code</th><th>option</th><th>condition</th><th>acl</th><th>action</th></tr>
+  <tr><td>
+  <input type=\"text\" name=\"redirectname\" />
+  </td><td>
+  <select name=\"type\" >
+    <option value=\"prefix\"> prefix </option>
+    <option value=\"location\"> location  </option>
+    </select>
+  </td><td>
+  <input type=\"text\" name=\"to\" />
+  </td><td>
+    <select name=\"code\" >
+    <option value=\"302\"> 302 (moved temporary) </option>
+    <option value=\"301\"> 301 (moved permanently) </option>
+    <option value=\"303\"> 303 (like 302 with get) </option>
+  </select>
+  </td><td>
+  <select name=\"option\" >
+    <option value=\"\"> </option>
+    <option value=\"drop-query\"> drop-query </option>
+  </select>
+  </td><td>
+  <select name=\"cond\" >
+    <option value=\"if\"> if </option>
+    <option value=\"unless\"> unless </option>
+  </select>
+  </td><td>
+  <input type=\"text\" name=\"redirect_acl\" />
+  </td><td>
+  <input type=\"submit\" />
+  </td><tr></table>
+  </form>
+</p>
+  "
+
+echo "<h1>ACL</h1>"
+numacl=$(ls $lbdir/listen_$farmname/acl_* | wc -l)
+echo "<table border=\"1\">
+<tr><th>Name</th><th>acl</th><th>action</th><th><a href=\"farm?farmname=$farmname&action=doc_acl\">Help</a></th></tr>"
+for file in $lbdir/listen_$farmname/acl_*; do 
+ aclname=$(basename $file)
+ aclname=${aclname#*_}
+ num=1
+ cat $file | while read line; do 
+   _line=$(echo $line | sed "s/${aclname}=//" )
+   echo "<tr><th>$aclname</th><td>$_line</td><td><a href=\"farm?farmname=$farmname&action=delacl&aclname=$aclname&line=$num\">delete</a></td></tr>"
+   num=$(( $num + 1 ))
+ done 
+done
+echo " </table>"
+
+
+echo "<br/>
+<table style=\"text-align: center\">
+<tr><th>Name</th><th>criterion</th><th>flags</th><th>operator</th><th>values</th><th></th></tr>
+<tr><td>url_static</td><td>path_end</td><td> </td><td></td><td>.css .js .jpg .gif .png</td><th><- example</th></tr>
+<tr><td>host_www</td><td>hdr_beg(host)</td><td>-i</td><td></td><td>www</td><th><- example</th></tr>
+<form action=\"farm\" method=\"get\">
+<input type=\"hidden\" name=\"farmname\" value=\"$farmname\" />
+<input type=\"hidden\" name=\"action\" value=\"newacl\" />
+<tr>
+  <td><input type=\"text\" name=\"aclname\" /></td>
+  <td><input type=\"text\" name=\"aclcriterion\" /></td>
+  <td>
+    <select name=\"aclflag\">
+      <option value=\"\"> </option>
+      <option value=\"-i\"> case insensitive </option>
+      <option value=\"--\"> end flags </option>
+    </select>
+  </td>
+  <td>
+    <select name=\"acloperator\">
+      <option value=\"\"> </option>
+      <option value=\"eq\"> = </option>
+      <option value=\"ge\"> >= </option>
+      <option value=\"gt\"> > </option>
+      <option value=\"le\"> <= </option>
+      <option value=\"lt\"> < </option>
+    </select>
+  </td>
+  <td><input type=\"text\" name=\"aclvalues\" /></td>
+  <td><input type=\"submit\" /></td>
+</tr></form>
+</table>"
+
+[ "$DOCcookie" = "1" ] && cat doc_cookie
+[ "$DOCbalance" = "1" ] && cat doc_balance
+[ "$DOCbind" = "1" ] && cat doc_bind
+
+cat $templatedir/footer.template

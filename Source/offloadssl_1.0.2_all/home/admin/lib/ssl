@@ -1,0 +1,5 @@
+source /home/admin/lib/common_bash
+
+sslexec=/usr/bin/stunnel4
+
+chrootdir=/rw/chroot/stunnel4

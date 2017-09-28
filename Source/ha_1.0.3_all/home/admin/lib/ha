@@ -1,0 +1,2 @@
+ucarpconfig=/home/admin/etc/ha/ucarp.cfg
+ucarppid=/tmp/ucarp.pid

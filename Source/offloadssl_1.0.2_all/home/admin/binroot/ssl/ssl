@@ -1,0 +1,135 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/ssl
+
+execfullpath="$0"
+filename=$(basename $execfullpath)
+BINCURRENTPATH=$(dirname $execfullpath)
+CURRENTPATH=$(echo $BINCURRENTPATH | sed 's/binroot/root/')
+conffile="$CURRENTPATH/$filename"
+
+status_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  name=$(basename $filename) 
+  /home/admin/bin/ssl.cmd status $name
+  return 0
+}
+
+status_set(){
+  # check if the value is good to be writen to the file 
+  return 0 
+}
+
+name_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+name_set(){
+  # check if the value is good to be writen to the file 
+  return 0 
+}
+
+
+lport_get(){ # action to retreive the value 
+ # return 0 if the value is writen directly on the file
+  return 0
+}
+
+lport_set(){
+  # check if the value is good to be writen to the file 
+  return 0 
+}
+
+dport_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+dport_set(){
+  # check if the value is good to be writen to the file 
+  return 0 
+}
+
+cert_get(){
+  # action to retreive the value 
+  # return 0 if the value is writen directly on the file
+  return 0
+}
+
+cert_set(){
+  # check if the value is good to be writen to the file 
+  return 0 
+}
+
+refresh(){
+  echo "$filename refresh"
+  # set the value of the file to current running values
+   name=$(basename $filename) 
+   currstatus=$(/home/admin/bin/ssl.cmd status $name)
+   setOption $filename status $currstatus 
+}
+
+commit(){
+  # activate the configuration of this file
+  echo "$filename commit"
+
+  # the file is created
+   status=$(getValue $filename status) 
+   name=$(basename $filename) 
+   lport=$(getValue $filename lport) 
+   dport=$(getValue $filename dport ) 
+   cert=$(getValue $filename cert) 
+   
+   cat > /home/admin/etc/ssl/$name.conf << EOF
+cert = /home/admin/etc/ssl/${cert}.pem
+#sslVersion = SSLv3
+chroot = $chrootdir
+setuid = stunnel4
+setgid = stunnel4
+; PID is created inside chroot jail
+pid = /$name.pid
+debug=5
+output= $chrootdir/$name.log
+socket = l:TCP_NODELAY=1
+socket = r:TCP_NODELAY=1
+[https]
+accept  = $lport
+connect = $dport
+TIMEOUTclose = 0
+EOF
+   
+   if [ "$status" = "1" ]; then
+     sudo /home/admin/bin/ssl.cmd start "/home/admin/etc/ssl/$name.conf"
+   else
+     sudo /home/admin/bin/ssl.cmd stop "$name"
+   fi
+   refresh
+}
+
+init(){
+# create the config(s) file(s)
+ [ ! -d $chrootdir ] && mkdir -p $chrootdir 
+ chown stunnel4:stunnel4 $chrootdir
+ return 0
+}
+
+touch(){
+  # in case of creation of a new file 
+  file=$1
+  [ -z $file ] && return 2
+  return 0
+}
+
+## main
+action=$1
+[ -z action ] && return 2
+shift
+option=$1
+shift
+value=$*
+execute $action $option $value

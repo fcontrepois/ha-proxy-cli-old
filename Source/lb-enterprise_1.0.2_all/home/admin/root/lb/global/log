@@ -1,0 +1,3 @@
+socket*=/dev/log
+facil*=local6
+level*=debug

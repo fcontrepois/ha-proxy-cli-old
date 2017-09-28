@@ -1,0 +1,47 @@
+#!/bin/bash
+
+source /home/admin/lib/cli
+source /home/admin/lib/cli-web
+
+appdir=/home/admin/root/ha
+appbindir=/home/admin/binroot/ha
+
+getquery
+action=$( get_parameter $query action )
+format=$( get_parameter $query format )
+
+vip=$( get_parameter $query vip )
+vnetmask=$( get_parameter $query vnetmask )
+base=$( get_parameter $query base )
+if=$( get_parameter $query if )
+srcip=$( get_parameter $query srcip )
+instance=$( get_parameter $query instance )
+password=$( get_parameter $query password )
+
+case $action in
+ "changeHa")
+   sudo /usr/local/sbin/remountrw
+   setOption $appdir/vip vip $vip
+   setOption $appdir/vip vnetmask $vnetmask
+   setOption $appdir/vip base $base
+   setOption $appdir/vip if $if
+   setOption $appdir/vip srcip $srcip
+   setOption $appdir/vip instance $instance
+   setOption $appdir/vip password $password
+   commit $appdir/vip >/dev/null 2>&1
+ ;;
+ "haup")
+   setOption $appdir/status up 1
+   commit $appdir/status >/dev/null 2>&1
+ ;;
+ "hadown")
+    setOption $appdir/status up 0
+   commit $appdir/status >/dev/null 2>&1
+ ;;
+esac
+
+if [ "$format" = "xml" ]; then
+        echo "<ok />"
+else
+	echo "<meta HTTP-EQUIV=\"refresh\" content=\"0; url=/ha-hp\">"
+fi
